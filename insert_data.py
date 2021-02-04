@@ -13,6 +13,7 @@ from os import path
 from datetime import datetime
 
 DB_FILE = "database/housing_data.db"
+TABLE_NAME = 'house_data'
 
 def create_connection(db_file: str):
     """ create a database connection to a SQLite database """
@@ -32,11 +33,24 @@ def execute_query(query: str, db_file: str):
     conn.commit()
     conn.close()
     
+def select_query(query: str, db_file: str):
+    conn = create_connection(db_file).cursor()
+    conn.execute(query)
+
+    df = conn.fetchall()
+    conn.close()
+    return df
+    
 def insert_df(df, db_file: str, table_name: str):
     # Insert DataFrame into sqllite database
     conn = create_connection(db_file)
-    conn.execute(f"create table if not exists {table_name}" + columns_to_sql(df))
-    df.columns = [col.replace(' ', '_') for col in df.columns]
+    query = f"create table if not exists {table_name} " + columns_to_sql(df)
+    try:
+        conn.execute(query)
+    except:
+        print(query)
+        raise TypeError("Error")
+    df.columns = [sanitize_sql(col.replace(' ', '_')) for col in df.columns]
     df.to_sql(name=table_name, con=conn, if_exists='append', index=False)
     conn.close()
     print('SQL insert process finished')
@@ -44,6 +58,13 @@ def insert_df(df, db_file: str, table_name: str):
 # Create a primary key of the house data
 def convert_row_to_p_key(x):
     return "_".join([re.sub(' +', ' ', str(i).strip()) for i in x[sorted(x.index)].values])
+
+def sanitize_sql(sql_query):
+    sanitized_query = sql_query.replace('&', 'AND')
+    # Sanitizes the special characters of sqllite with em dash
+    for operator in ['-', '?', ';', '*', '/', '>', '<', '=', '~', '!']:
+        sanitized_query = sanitized_query.replace(operator, '—')
+    return sanitized_query
 
 def columns_to_sql(df):
     primary_key = df['p_key']
@@ -58,6 +79,7 @@ def columns_to_sql(df):
             insert_query_values += " REAL,\n"
         else: # Else object or datetime
             insert_query_values += " TEXT,\n"
+    insert_query_values = sanitize_sql(insert_query_values)
     insert_query_values += 'PRIMARY KEY (p_key) );'
     return insert_query_values
 
@@ -78,7 +100,7 @@ if __name__ == '__main__':
         raise ValueError("Error connecting: 404 Error")
 
     for date in range(2007, curr_year - 1): # Get data from 2017 to last year
-        for borough in ['Queens', 'Brooklyn', 'Manhattan', 'Bronx']: # For all boroughs in NYC
+        for borough in ['Queens', 'Brooklyn', 'Manhattan', 'Bronx']: # For all 4 boroughs in NYC
             # Regex the excel url
             excel_url = site + re.findall(f"href=\"(.*{date}.*{borough}.*.xls.*)\"", resp.content.decode('utf-8'), re.IGNORECASE)[0]
             
@@ -89,9 +111,12 @@ if __name__ == '__main__':
             # Calculate a simple primary key from excel
             if 'p_key' not in df.columns:
                 df['p_key'] = df.apply(convert_row_to_p_key, axis=1)
+                
+            df = df.drop_duplicates(subset='p_key')
+            insert_df(df=df, db_file=DB_FILE, table_name=TABLE_NAME)
             
-            insert_df(df=df, db_file=DB_FILE, table_name='house_data')
-
+            # Add key to see if flag is already there
+            
     # Upload current year as well
     for borough in ['Queens', 'Brooklyn', 'Manhattan', 'Bronx']: # For all 4 boroughs in NYC
         # Regex the excel url
@@ -103,5 +128,5 @@ if __name__ == '__main__':
         # Calculate a simple primary key from excel
         if 'p_key' not in df.columns:
             df['p_key'] = df.apply(convert_row_to_p_key, axis=1)
-
-        insert_df(df=df, db_file=DB_FILE, table_name='house_data')  
+        df = df.drop_duplicates(subset='p_key')
+        insert_df(df=df, db_file=DB_FILE, table_name=TABLE_NAME)  
