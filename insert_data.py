@@ -43,7 +43,7 @@ def insert_df(df, db_file: str, table_name: str):
     
 # Create a primary key of the house data
 def convert_row_to_p_key(x):
-    return "-".join([re.sub(' +', ' ', str(i).strip()) for i in x[sorted(x.index)].values])
+    return "_".join([re.sub(' +', ' ', str(i).strip()) for i in x[sorted(x.index)].values])
 
 def columns_to_sql(df):
     primary_key = df['p_key']
@@ -54,7 +54,7 @@ def columns_to_sql(df):
         insert_query_values += col.replace(' ', '_')
         if (np.issubdtype(date_type, np.integer)) or (np.issubdtype(df['NEIGHBORHOOD'].dtype, np.bool_)):
             insert_query_values += " INTEGER,\n"
-        elif np.issubdtype(date_type, np.float):
+        elif np.issubdtype(date_type, np.float64):
             insert_query_values += " REAL,\n"
         else: # Else object or datetime
             insert_query_values += " TEXT,\n"
@@ -91,3 +91,17 @@ if __name__ == '__main__':
                 df['p_key'] = df.apply(convert_row_to_p_key, axis=1)
             
             insert_df(df=df, db_file=DB_FILE, table_name='house_data')
+
+    # Upload current year as well
+    for borough in ['Queens', 'Brooklyn', 'Manhattan', 'Bronx']: # For all 4 boroughs in NYC
+        # Regex the excel url
+        excel_url = site + re.findall(f"href=\"(.*{borough}.*.xls.*)\"", resp_curr.content.decode('utf-8'), re.IGNORECASE)[0]
+        # Get the excel
+        raw_excel = requests.get(excel_url).content
+        df = pd.read_excel(raw_excel, skiprows = range(0,3))
+
+        # Calculate a simple primary key from excel
+        if 'p_key' not in df.columns:
+            df['p_key'] = df.apply(convert_row_to_p_key, axis=1)
+
+        insert_df(df=df, db_file=DB_FILE, table_name='house_data')  
