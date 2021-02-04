@@ -12,6 +12,7 @@ from sqlite3 import Error
 from os import path
 from datetime import datetime
 
+# Globals
 DB_FILE = "database/housing_data.db"
 TABLE_NAME = 'house_data'
 
@@ -34,11 +35,16 @@ def execute_query(query: str, db_file: str):
     conn.close()
     
 def select_query(query: str, db_file: str):
-    conn = create_connection(db_file).cursor()
-    conn.execute(query)
+    try:
+        conn = create_connection(db_file).cursor()
+        conn.execute(query)
 
-    df = conn.fetchall()
-    conn.close()
+        df = conn.fetchall()
+    except:
+        print("Error in Query: " + query)
+        df = None
+    finally:
+        conn.close()
     return df
     
 def insert_df(df, db_file: str, table_name: str):
@@ -47,13 +53,14 @@ def insert_df(df, db_file: str, table_name: str):
     query = f"create table if not exists {table_name} " + columns_to_sql(df)
     try:
         conn.execute(query)
+        df.columns = [sanitize_sql(col.replace(' ', '_')) for col in df.columns]
+        df.to_sql(name=table_name, con=conn, if_exists='append', index=False)
+        print('SQL insert process finished')
     except:
         print(query)
         raise TypeError("Error")
-    df.columns = [sanitize_sql(col.replace(' ', '_')) for col in df.columns]
-    df.to_sql(name=table_name, con=conn, if_exists='append', index=False)
-    conn.close()
-    print('SQL insert process finished')
+    finally:
+        conn.close()
     
 # Create a primary key of the house data
 def convert_row_to_p_key(x):
@@ -83,6 +90,11 @@ def columns_to_sql(df):
     insert_query_values += 'PRIMARY KEY (p_key) );'
     return insert_query_values
 
+def find_rows_to_skip(raw_excel):
+    for i in range(1,5):
+        if pd.read_excel(raw_excel).iloc[i][0] == 'BOROUGH':
+            return i + 1
+
 if __name__ == '__main__':
     if not path.exists(DB_FILE):
         create_connection(DB_FILE)
@@ -106,7 +118,8 @@ if __name__ == '__main__':
             
             # Get the excel
             raw_excel = requests.get(excel_url).content
-            df = pd.read_excel(raw_excel, skiprows = range(0,3))
+            skip_row_limit = find_rows_to_skip(raw_excel)
+            df = pd.read_excel(raw_excel, skiprows = range(0,skip_row_limit))
             
             # Calculate a simple primary key from excel
             if 'p_key' not in df.columns:
@@ -122,8 +135,8 @@ if __name__ == '__main__':
         # Regex the excel url
         excel_url = site + re.findall(f"href=\"(.*{borough}.*.xls.*)\"", resp_curr.content.decode('utf-8'), re.IGNORECASE)[0]
         # Get the excel
-        raw_excel = requests.get(excel_url).content
-        df = pd.read_excel(raw_excel, skiprows = range(0,3))
+        skip_row_limit = find_rows_to_skip(raw_excel)
+        df = pd.read_excel(raw_excel, skiprows = range(0,skip_row_limit))
 
         # Calculate a simple primary key from excel
         if 'p_key' not in df.columns:
