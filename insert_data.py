@@ -92,7 +92,7 @@ def columns_to_sql(df):
 
 def find_rows_to_skip(raw_excel):
     for i in range(1,5):
-        if pd.read_excel(raw_excel).iloc[i][0] == 'BOROUGH':
+        if pd.read_excel(raw_excel).iloc[i][0].replace('\n', '') == 'BOROUGH':
             return i + 1
 
 if __name__ == '__main__':
@@ -120,6 +120,7 @@ if __name__ == '__main__':
             raw_excel = requests.get(excel_url).content
             skip_row_limit = find_rows_to_skip(raw_excel)
             df = pd.read_excel(raw_excel, skiprows = range(0,skip_row_limit))
+            df.columns = [col.replace('\n', '') for col in df.columns]
             
             # Calculate a simple primary key from excel
             if 'p_key' not in df.columns:
@@ -137,9 +138,10 @@ if __name__ == '__main__':
         # Get the excel
         skip_row_limit = find_rows_to_skip(raw_excel)
         df = pd.read_excel(raw_excel, skiprows = range(0,skip_row_limit))
-
+        df.columns = [col.replace('\n', '') for col in df.columns]
+        
         # Calculate a simple primary key from excel
         if 'p_key' not in df.columns:
             df['p_key'] = df.apply(convert_row_to_p_key, axis=1)
         df = df.drop_duplicates(subset='p_key')
-        insert_df(df=df, db_file=DB_FILE, table_name=TABLE_NAME)  
+        insert_df(df=df, db_file=DB_FILE, table_name=TABLE_NAME) 
