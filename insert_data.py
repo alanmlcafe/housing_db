@@ -11,10 +11,17 @@ import numpy as np
 from sqlite3 import Error
 from os import path
 from datetime import datetime
+from enum import Enum
 
 # Globals
 DB_FILE = "database/housing_data.db"
 TABLE_NAME = 'house_data'
+
+class Borough(Enum):
+    QUEENS = 4
+    BROOKLYN = 3
+    BRONX = 2
+    MANHATTAN = 1
 
 def create_connection(db_file: str):
     """ create a database connection to a SQLite database """
@@ -112,9 +119,9 @@ if __name__ == '__main__':
         raise ValueError("Error connecting: 404 Error")
 
     for date in range(2007, curr_year - 1): # Get data from 2017 to last year
-        for borough in ['Queens', 'Brooklyn', 'Manhattan', 'Bronx']: # For all 4 boroughs in NYC
+        for borough in Borough: # For all 4 boroughs in NYC
             # Regex the excel url
-            excel_url = site + re.findall(f"href=\"(.*{date}.*{borough}.*.xls.*)\"", resp.content.decode('utf-8'), re.IGNORECASE)[0]
+            excel_url = site + re.findall(f"href=\"(.*{date}.*{borough.name}.*.xls.*)\"", resp.content.decode('utf-8'), re.IGNORECASE)[0]
             
             # Get the excel
             raw_excel = requests.get(excel_url).content
@@ -127,21 +134,26 @@ if __name__ == '__main__':
                 df['p_key'] = df.apply(convert_row_to_p_key, axis=1)
                 
             df = df.drop_duplicates(subset='p_key')
+            if 'BOROUGH' not in df.columns:
+                df['BOROUGH'] = borough.value
             insert_df(df=df, db_file=DB_FILE, table_name=TABLE_NAME)
             
-            # Add key to see if flag is already there
+
             
     # Upload current year as well
-    for borough in ['Queens', 'Brooklyn', 'Manhattan', 'Bronx']: # For all 4 boroughs in NYC
+    for borough in Borough: # For all 4 boroughs in NYC
         # Regex the excel url
-        excel_url = site + re.findall(f"href=\"(.*{borough}.*.xls.*)\"", resp_curr.content.decode('utf-8'), re.IGNORECASE)[0]
+        excel_url = site + re.findall(f"href=\"(.*{borough.name}.*.xls.*)\"", resp_curr.content.decode('utf-8'), re.IGNORECASE)[0]
         # Get the excel
+        raw_excel = requests.get(excel_url).content
         skip_row_limit = find_rows_to_skip(raw_excel)
         df = pd.read_excel(raw_excel, skiprows = range(0,skip_row_limit))
         df.columns = [col.replace('\n', '') for col in df.columns]
         
         # Calculate a simple primary key from excel
         if 'p_key' not in df.columns:
-            df['p_key'] = df.apply(convert_row_to_p_key, axis=1)
+        df['p_key'] = df.apply(convert_row_to_p_key, axis=1)
         df = df.drop_duplicates(subset='p_key')
-        insert_df(df=df, db_file=DB_FILE, table_name=TABLE_NAME) 
+        if 'BOROUGH' not in df.columns:
+                    df['BOROUGH'] = borough.value
+        insert_df(df=df, db_file=DB_FILE, table_name=TABLE_NAME)  
